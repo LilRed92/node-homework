@@ -1,0 +1,191 @@
+name: AI PR Description Generator
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+
+jobs:
+  generate-description:
+    runs-on: ubuntu-24.04
+    permissions:
+      pull-requests: write
+      contents: read
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+
+      - name: Generate and Update PR Description
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
+        run: |
+          git fetch origin "${{ github.event.pull_request.base.ref }}"
+
+          DIFF=$(git diff "origin/${{ github.event.pull_request.base.ref }}...HEAD" -- . ':!.github/workflows/*' ':!.husky/*' ':!*agent*')
+
+          if [ -z "$DIFF" ]; then
+            echo "No changes found in diff."
+            exit 0
+          fi
+
+          SYSTEM_PROMPT=$(cat <<'PROMPT'
+          You are an expert Full-Stack Software Engineer acting as a Pull Request reviewer and documentation generator. Analyze the provided code diffs and generate a structured Pull Request description matching the repository template.
+
+          Output MUST strictly follow this Markdown structure:
+
+          ## Description
+          - Provide a detailed overview of the code changes and how they work.
+          - Explain key technical decisions, architectural patterns, and interactions across the stack (React, Node/Express, PostgreSQL, etc.).
+
+          ## Context
+          - Explain why this change is necessary and what problem it solves.
+          - Include ticket/issue linking (e.g., 'Closes #' or 'Relates to #').
+          - Highlight any breaking changes, dependencies, or notable risks (or state 'No major risks identified').
+
+          ## How has this been tested?
+          - Describe testing methodology, testing environment (e.g., Node version, OS), and tools used (e.g., Jest, Supertest, manual verification).
+          - Provide step-by-step instructions to pull the branch and verify locally.
+
+          ## Screenshots (if appropriate):
+          - If frontend UI changes were made, output: **[Insert Screenshots/Screen Recording Here]**
+          - If changes are backend/CLI-only with no UI impact, output: N/A
+
+          Additional constraints:
+          - COMPLETELY IGNORE any changes made to workflow automation files (.github/workflows/) or AI agent configurations (.husky/, .agents/). Do not mention them in the generated description.
+          - Output ONLY the raw Markdown starting directly with '## Description'. Do not include preamble or conversational filler.
+          PROMPT
+          )
+
+          PR_DESCRIPTION=""
+
+          call_gemini() {
+            local max_attempts=3
+            local attempt=1
+            local response
+            local http_code
+            local body
+            local request_body
+
+            request_body=$(jq -n \
+              --arg prompt "$SYSTEM_PROMPT" \
+              --arg diff "$DIFF" \
+              '{
+                contents: [{
+                  parts: [
+                    {text: $prompt},
+                    {text: "\n\nHere is the diff to analyze:\n"},
+                    {text: $diff}
+                  ]
+                }]
+              }')
+
+            while [ "$attempt" -le "$max_attempts" ]; do
+              response=$(curl -sS -w $'\n%{http_code}' -X POST \
+                "https://generativelanguage.googleapis.com/v1beta/models/gemini-3.5-flash:generateContent" \
+                -H "Content-Type: application/json" \
+                -H "x-goog-api-key: ${GEMINI_API_KEY}" \
+                -d "$request_body") || response=$'\n000'
+
+              http_code="${response##*$'\n'}"
+              body="${response%$'\n'*}"
+
+              if [ "$http_code" = "200" ]; then
+                PR_DESCRIPTION=$(jq -r '.candidates[0].content.parts[0].text // empty' <<< "$body")
+                if [ -n "$PR_DESCRIPTION" ]; then
+                  echo "PR description generated with Gemini."
+                  return 0
+                fi
+              fi
+
+              echo "Gemini attempt ${attempt}/${max_attempts} failed with HTTP ${http_code}."
+
+              if [[ "$http_code" =~ ^(429|500|502|503|504)$ ]] && [ "$attempt" -lt "$max_attempts" ]; then
+                sleep $((5 * 2 ** (attempt - 1)))
+                attempt=$((attempt + 1))
+              else
+                echo "Gemini response: $body"
+                return 1
+              fi
+            done
+
+            return 1
+          }
+
+          call_groq() {
+            local response
+            local http_code
+            local body
+            local groq_model="openai/gpt-oss-120b"
+            local request_body
+            local groq_diff
+
+            # Groq currently has an 8K TPM limit.
+            # Keep the fallback request comfortably below that limit.
+            # Gemini still receives the complete diff.
+            groq_diff="$DIFF"
+          
+            if [ "${#groq_diff}" -gt 24000 ]; then
+              echo "Diff is large; truncating Groq fallback input."
+              groq_diff="${groq_diff:0:24000}"
+              groq_diff="$groq_diff
+
+          [Diff truncated for Groq fallback due to provider token limits.]"
+            fi
+
+          request_body=$(jq -n \
+            --arg system "$SYSTEM_PROMPT" \
+            --arg diff "$groq_diff" \
+            --arg model "$groq_model" \
+            '{
+              model: $model,
+              messages: [
+                {
+                  role: "system",
+                  content: $system
+                },
+                {
+                  role: "user",
+                  content: ("\n\nHere is the diff to analyze:\n" + $diff)
+                }
+              ],
+              max_completion_tokens: 1200,
+              reasoning_effort: "low"
+            }')
+        
+          response=$(curl -sS -w $'\n%{http_code}' -X POST \
+            "https://api.groq.com/openai/v1/chat/completions" \
+            -H "Content-Type: application/json" \
+            -H "Authorization: Bearer ${GROQ_API_KEY}" \
+            -d "$request_body") || response=$'\n000'
+
+          http_code="${response##*$'\n'}"
+          body="${response%$'\n'*}"
+        
+          if [ "$http_code" = "200" ]; then
+            PR_DESCRIPTION=$(jq -r '.choices[0].message.content // empty' <<< "$body")
+        
+            if [ -n "$PR_DESCRIPTION" ]; then
+              echo "PR description generated with Groq fallback (${groq_model})."
+              return 0
+            fi
+          fi
+        
+          echo "Groq fallback failed with HTTP ${http_code}."
+          echo "Groq response: $body"
+          return 1
+          }
+        
+          if ! call_gemini; then
+            echo "Gemini unavailable. Falling back to Groq..."
+            if ! call_groq; then
+              echo "All AI providers failed. PR description was not generated."
+              exit 1
+            fi
+          fi
+
+          printf '%s\n' "$PR_DESCRIPTION" > pr-description.md
+          gh pr edit "${{ github.event.pull_request.number }}" --body-file pr-description.md
