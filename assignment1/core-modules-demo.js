@@ -36,12 +36,19 @@ async function runCoreModulesDemo() {
     highWaterMark: 1024,
   });
 
-  readStream.on('data', (chunk) => {
-    console.log(`Read chunk: ${chunk.slice(0, 40).replace(/\n/g, ' ')}...`);
-  });
+  // Wrap the stream in a Promise so it can be properly awaited,
+  // ensuring any code after this block runs only after streaming is complete.
+  await new Promise((resolve, reject) => {
+    readStream.on('data', (chunk) => {
+      console.log(`Read chunk: ${chunk.slice(0, 40).replace(/\n/g, ' ')}...`);
+    });
 
-  readStream.on('end', () => {
-    console.log('Finished reading large file with streams.');
+    readStream.on('end', () => {
+      console.log('Finished reading large file with streams.');
+      resolve();
+    });
+
+    readStream.on('error', reject);
   });
 }
 
