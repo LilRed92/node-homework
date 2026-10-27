@@ -21,7 +21,7 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
-          GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
+          OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
         run: |
           git fetch origin "${{ github.event.pull_request.base.ref }}"
 
@@ -115,73 +115,68 @@ jobs:
             return 1
           }
 
-          call_groq() {
+          call_openrouter() {
             local response
             local http_code
             local body
-            local groq_model="openai/gpt-oss-120b"
+            local or_model="meta-llama/llama-3.1-8b-instruct:free"
             local request_body
-            local groq_diff
+            local or_diff
 
-            # Groq currently has an 8K TPM limit.
-            # Keep the fallback request comfortably below that limit.
-            # Gemini still receives the complete diff.
-            groq_diff="$DIFF"
-          
-            if [ "${#groq_diff}" -gt 24000 ]; then
-              echo "Diff is large; truncating Groq fallback input."
-              groq_diff="${groq_diff:0:24000}"
-              groq_diff="$groq_diff
+            or_diff="$DIFF"
+            
+            if [ "${#or_diff}" -gt 20000 ]; then
+              echo "Diff is large; truncating OpenRouter fallback input."
+              or_diff="${or_diff:0:20000}"
+              or_diff="$or_diff
 
-          [Diff truncated for Groq fallback due to provider token limits.]"
+          [Diff truncated for fallback due to provider limits.]"
             fi
 
-          request_body=$(jq -n \
-            --arg system "$SYSTEM_PROMPT" \
-            --arg diff "$groq_diff" \
-            --arg model "$groq_model" \
-            '{
-              model: $model,
-              messages: [
-                {
-                  role: "system",
-                  content: $system
-                },
-                {
-                  role: "user",
-                  content: ("\n\nHere is the diff to analyze:\n" + $diff)
-                }
-              ],
-              max_completion_tokens: 1200,
-              reasoning_effort: "low"
-            }')
-        
-          response=$(curl -sS -w $'\n%{http_code}' -X POST \
-            "https://api.groq.com/openai/v1/chat/completions" \
-            -H "Content-Type: application/json" \
-            -H "Authorization: Bearer ${GROQ_API_KEY}" \
-            -d "$request_body") || response=$'\n000'
+            request_body=$(jq -n \
+              --arg system "$SYSTEM_PROMPT" \
+              --arg diff "$or_diff" \
+              --arg model "$or_model" \
+              '{
+                model: $model,
+                messages: [
+                  {
+                    role: "system",
+                    content: $system
+                  },
+                  {
+                    role: "user",
+                    content: ("\n\nHere is the diff to analyze:\n" + $diff)
+                  }
+                ]
+              }')
+            
+            response=$(curl -sS -w $'\n%{http_code}' -X POST \
+              "https://openrouter.ai/api/v1/chat/completions" \
+              -H "Content-Type: application/json" \
+              -H "Authorization: Bearer ${OPENROUTER_API_KEY}" \
+              -d "$request_body") || response=$'\n000'
 
-          http_code="${response##*$'\n'}"
-          body="${response%$'\n'*}"
-        
-          if [ "$http_code" = "200" ]; then
-            PR_DESCRIPTION=$(jq -r '.choices[0].message.content // empty' <<< "$body")
-        
-            if [ -n "$PR_DESCRIPTION" ]; then
-              echo "PR description generated with Groq fallback (${groq_model})."
-              return 0
+            http_code="${response##*$'\n'}"
+            body="${response%$'\n'*}"
+            
+            if [ "$http_code" = "200" ]; then
+              PR_DESCRIPTION=$(jq -r '.choices[0].message.content // empty' <<< "$body")
+            
+              if [ -n "$PR_DESCRIPTION" ]; then
+                echo "PR description generated with OpenRouter fallback (${or_model})."
+                return 0
+              fi
             fi
-          fi
-        
-          echo "Groq fallback failed with HTTP ${http_code}."
-          echo "Groq response: $body"
-          return 1
+            
+            echo "OpenRouter fallback failed with HTTP ${http_code}."
+            echo "OpenRouter response: $body"
+            return 1
           }
-        
+            
           if ! call_gemini; then
-            echo "Gemini unavailable. Falling back to Groq..."
-            if ! call_groq; then
+            echo "Gemini unavailable. Falling back to OpenRouter..."
+            if ! call_openrouter; then
               echo "All AI providers failed. PR description was not generated."
               exit 1
             fi
