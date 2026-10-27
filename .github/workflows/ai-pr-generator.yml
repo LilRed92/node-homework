@@ -25,7 +25,8 @@ jobs:
         run: |
           git fetch origin "${{ github.event.pull_request.base.ref }}"
 
-          DIFF=$(git diff "origin/${{ github.event.pull_request.base.ref }}...HEAD" -- . ':!.github/workflows/*' ':!.husky/*' ':!*agent*')
+          # Fetch the diff and ignore common large auto-generated files to save tokens
+          DIFF=$(git diff "origin/${{ github.event.pull_request.base.ref }}...HEAD" -- . ':!.github/workflows/*' ':!.husky/*' ':!*agent*' ':!package-lock.json' ':!*.lock')
 
           if [ -z "$DIFF" ]; then
             echo "No changes found in diff."
@@ -61,6 +62,10 @@ jobs:
           )
 
           PR_DESCRIPTION=""
+          
+          # Export to bypass Linux argument length limits in jq
+          export SYSTEM_PROMPT
+          export DIFF
 
           call_gemini() {
             local max_attempts=3
@@ -70,15 +75,13 @@ jobs:
             local body
             local request_body
 
-            request_body=$(jq -n \
-              --arg prompt "$SYSTEM_PROMPT" \
-              --arg diff "$DIFF" \
+            request_body=$(jq -n -c \
               '{
                 contents: [{
                   parts: [
-                    {text: $prompt},
+                    {text: env.SYSTEM_PROMPT},
                     {text: "\n\nHere is the diff to analyze:\n"},
-                    {text: $diff}
+                    {text: env.DIFF}
                   ]
                 }]
               }')
@@ -127,26 +130,25 @@ jobs:
             
             if [ "${#or_diff}" -gt 20000 ]; then
               echo "Diff is large; truncating OpenRouter fallback input."
-              or_diff="${or_diff:0:20000}"
-              or_diff="$or_diff
+              or_diff="${or_diff:0:20000}
 
           [Diff truncated for fallback due to provider limits.]"
             fi
+            
+            export OR_DIFF="$or_diff"
 
-            request_body=$(jq -n \
-              --arg system "$SYSTEM_PROMPT" \
-              --arg diff "$or_diff" \
+            request_body=$(jq -n -c \
               --arg model "$or_model" \
               '{
                 model: $model,
                 messages: [
                   {
                     role: "system",
-                    content: $system
+                    content: env.SYSTEM_PROMPT
                   },
                   {
                     role: "user",
-                    content: ("\n\nHere is the diff to analyze:\n" + $diff)
+                    content: "\n\nHere is the diff to analyze:\n\(env.OR_DIFF)"
                   }
                 ]
               }')
