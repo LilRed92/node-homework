@@ -128,9 +128,9 @@ jobs:
             # Gemini still receives the complete diff.
             groq_diff="$DIFF"
           
-            if [ "${#groq_diff}" -gt 15000 ]; then
+            if [ "${#groq_diff}" -gt 10000 ]; then
               echo "Diff is large; truncating Groq fallback input."
-              groq_diff="${groq_diff:0:15000}"
+              groq_diff="${groq_diff:0:10000}"
               groq_diff="$groq_diff
 
           [Diff truncated for Groq fallback due to provider token limits.]"
