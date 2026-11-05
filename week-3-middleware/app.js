@@ -5,7 +5,7 @@ const dogsRouter = require("./routes/dogs");
 
 const app = express();
 
-// Request ID middleware
+// 🔖 [VIDEO: Request ID custom middleware]
 app.use((req, res, next) => {
   const requestId = crypto.randomUUID();
   req.requestId = requestId;
@@ -28,6 +28,9 @@ app.use((req, res, next) => {
   next();
 });
 
+// 🔖 [VIDEO: express.json() before routes]
+app.use(express.json({ limit: "1mb" }));
+
 // Content-Type validation middleware for POST requests
 app.use((req, res, next) => {
   if (req.method === "POST") {
@@ -42,16 +45,13 @@ app.use((req, res, next) => {
   next();
 });
 
-// JSON body parser with size limit
-app.use(express.json({ limit: "1mb" }));
-
-// Static file middleware for public directory
+// 🔖 [VIDEO: express.static() for public files]
 app.use(express.static(path.join(__dirname, "public")));
 
-// Application routes
+// 🔖 [VIDEO: Application routes]
 app.use("/", dogsRouter);
 
-// 404 handler for unmatched routes
+// 🔖 [VIDEO: 404 handler after routes]
 app.use((req, res) => {
   res.status(404).json({
     error: "Route not found",
@@ -59,7 +59,7 @@ app.use((req, res) => {
   });
 });
 
-// Centralized error handling middleware
+// 🔖 [VIDEO: Centralized error handler at end]
 // eslint-disable-next-line no-unused-vars
 app.use((err, req, res, next) => {
   if (err.name === "ValidationError") {
