@@ -4,6 +4,7 @@ const { userSchema } = require("../validation/userSchema");
 
 const scrypt = util.promisify(crypto.scrypt);
 
+// 🔖 [VIDEO: Password hashing with salt and scrypt]
 const hashPassword = async (password) => {
   const salt = crypto.randomBytes(16).toString("hex");
   const derivedKey = await scrypt(password, salt, 64);
@@ -25,6 +26,7 @@ const comparePassword = async (inputPassword, storedHash) => {
   return crypto.timingSafeEqual(keyBuffer, derivedKey);
 };
 
+// 🔖 [VIDEO: Password hashing on registration]
 const register = async (req, res) => {
   const incomingBody = req.body ?? {};
   const { error, value } = userSchema.validate(incomingBody, {
@@ -48,6 +50,7 @@ const register = async (req, res) => {
   return res.status(201).json({ name: newUser.name, email: newUser.email });
 };
 
+// 🔖 [VIDEO: Password verification on logon]
 const logon = async (req, res) => {
   const incomingBody = req.body ?? {};
   const { email, password } = incomingBody;

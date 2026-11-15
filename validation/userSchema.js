@@ -1,5 +1,6 @@
 const Joi = require("joi");
 
+// 🔖 [VIDEO: Joi User Validation Schema]
 const userSchema = Joi.object({
   email: Joi.string().trim().lowercase().email().required(),
   name: Joi.string().trim().min(3).max(30).required(),

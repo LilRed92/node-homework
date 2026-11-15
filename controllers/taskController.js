@@ -17,6 +17,7 @@ const sanitizeTask = (task) => {
   return sanitized;
 };
 
+// 🔖 [VIDEO: Joi validation with error and value]
 const create = async (req, res) => {
   const incomingBody = req.body ?? {};
   const { error, value } = taskSchema.validate(incomingBody);
@@ -27,6 +28,7 @@ const create = async (req, res) => {
 
   const newTask = {
     id: taskCounter(),
+    // 🔖 [VIDEO: Task ownership assignment]
     userId: global.user_id?.email,
     ...value,
   };
@@ -58,6 +60,7 @@ const show = async (req, res) => {
     });
   }
 
+  // 🔖 [VIDEO: Task ownership verification (Authorization)]
   const task = global.tasks.find(
     (item) => item.id === taskId && item.userId === global.user_id?.email,
   );
@@ -85,6 +88,7 @@ const update = async (req, res) => {
     });
   }
 
+  // 🔖 [VIDEO: Task ownership verification (Authorization)]
   const task = global.tasks.find(
     (item) => item.id === taskId && item.userId === global.user_id?.email,
   );
