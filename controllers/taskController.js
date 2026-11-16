@@ -1,24 +1,8 @@
-const {
-  taskSchema,
-  patchTaskSchema,
-} = require("../validation/taskSchema");
+const pool = require("../db/pg-pool");
+const { taskSchema, patchTaskSchema } = require("../validation/taskSchema");
 
-const taskCounter = (() => {
-  let lastTaskNumber = 0;
-  return () => {
-    lastTaskNumber += 1;
-    return lastTaskNumber;
-  };
-})();
-
-const sanitizeTask = (task) => {
-  const sanitized = { ...task };
-  delete sanitized.userId;
-  return sanitized;
-};
-
-// 🔖 [VIDEO: Joi validation with error and value]
-const create = async (req, res) => {
+// 🔖 [VIDEO: Joi validation returning error and value]
+const create = async (req, res, next) => {
   const incomingBody = req.body ?? {};
   const { error, value } = taskSchema.validate(incomingBody);
 
@@ -26,32 +10,47 @@ const create = async (req, res) => {
     return res.status(400).json({ message: error.message });
   }
 
-  const newTask = {
-    id: taskCounter(),
-    // 🔖 [VIDEO: Task ownership assignment]
-    userId: global.user_id?.email,
-    ...value,
-  };
+  try {
+    // 🔖 [VIDEO: Using validated value instead of raw body]
+    const result = await pool.query(
+      `INSERT INTO tasks (title, is_completed, user_id)
+       VALUES ($1, $2, $3)
+       RETURNING id, title, is_completed`,
+      [value.title, value.isCompleted, global.user_id],
+    );
 
-  global.tasks.push(newTask);
-
-  return res.status(201).json(sanitizeTask(newTask));
-};
-
-const index = async (req, res) => {
-  const userTasks = global.tasks.filter(
-    (task) => task.userId === global.user_id?.email,
-  );
-
-  if (userTasks.length === 0) {
-    return res.status(404).json({ message: "No tasks found." });
+    const task = result.rows[0];
+    return res.status(201).json(task);
+  } catch (err) {
+    if (next) {
+      return next(err);
+    }
+    return res.status(500).json({ error: err.message });
   }
-
-  const sanitizedTasks = userTasks.map(sanitizeTask);
-  return res.status(200).json(sanitizedTasks);
 };
 
-const show = async (req, res) => {
+const index = async (req, res, next) => {
+  try {
+    const result = await pool.query(
+      "SELECT id, title, is_completed FROM tasks WHERE user_id = $1",
+      [global.user_id],
+    );
+
+    const tasks = result.rows;
+    if (tasks.length === 0) {
+      return res.status(404).json({ message: "No tasks found." });
+    }
+
+    return res.status(200).json(tasks);
+  } catch (err) {
+    if (next) {
+      return next(err);
+    }
+    return res.status(500).json({ error: err.message });
+  }
+};
+
+const show = async (req, res, next) => {
   const taskId = parseInt(req.params?.id, 10);
 
   if (!taskId) {
@@ -60,19 +59,27 @@ const show = async (req, res) => {
     });
   }
 
-  // 🔖 [VIDEO: Task ownership verification (Authorization)]
-  const task = global.tasks.find(
-    (item) => item.id === taskId && item.userId === global.user_id?.email,
-  );
+  try {
+    // 🔖 [VIDEO: Checking task ownership against user_id]
+    const result = await pool.query(
+      "SELECT id, title, is_completed FROM tasks WHERE id = $1 AND user_id = $2",
+      [taskId, global.user_id],
+    );
 
-  if (!task) {
-    return res.status(404).json({ message: "Task not found." });
+    if (result.rows.length === 0) {
+      return res.status(404).json({ message: "Task not found." });
+    }
+
+    return res.status(200).json(result.rows[0]);
+  } catch (err) {
+    if (next) {
+      return next(err);
+    }
+    return res.status(500).json({ error: err.message });
   }
-
-  return res.status(200).json(sanitizeTask(task));
 };
 
-const update = async (req, res) => {
+const update = async (req, res, next) => {
   const incomingBody = req.body ?? {};
   const { error, value } = patchTaskSchema.validate(incomingBody);
 
@@ -88,21 +95,37 @@ const update = async (req, res) => {
     });
   }
 
-  // 🔖 [VIDEO: Task ownership verification (Authorization)]
-  const task = global.tasks.find(
-    (item) => item.id === taskId && item.userId === global.user_id?.email,
-  );
+  try {
+    const taskKeys = Object.keys(value).map((key) =>
+      key === "isCompleted" ? "is_completed" : key,
+    );
+    const setClauses = taskKeys
+      .map((key, i) => `${key} = $${i + 1}`)
+      .join(", ");
+    const idParm = `$${taskKeys.length + 1}`;
+    const userParm = `$${taskKeys.length + 2}`;
 
-  if (!task) {
-    return res.status(404).json({ message: "Task not found." });
+    const result = await pool.query(
+      `UPDATE tasks SET ${setClauses}
+       WHERE id = ${idParm} AND user_id = ${userParm}
+       RETURNING id, title, is_completed`,
+      [...Object.values(value), taskId, global.user_id],
+    );
+
+    if (result.rows.length === 0) {
+      return res.status(404).json({ message: "Task not found." });
+    }
+
+    return res.status(200).json(result.rows[0]);
+  } catch (err) {
+    if (next) {
+      return next(err);
+    }
+    return res.status(500).json({ error: err.message });
   }
-
-  Object.assign(task, value);
-
-  return res.status(200).json(sanitizeTask(task));
 };
 
-const deleteTask = async (req, res) => {
+const deleteTask = async (req, res, next) => {
   const taskId = parseInt(req.params?.id, 10);
 
   if (!taskId) {
@@ -111,16 +134,23 @@ const deleteTask = async (req, res) => {
     });
   }
 
-  const taskIndex = global.tasks.findIndex(
-    (item) => item.id === taskId && item.userId === global.user_id?.email,
-  );
+  try {
+    const result = await pool.query(
+      "DELETE FROM tasks WHERE id = $1 AND user_id = $2 RETURNING id, title, is_completed",
+      [taskId, global.user_id],
+    );
 
-  if (taskIndex === -1) {
-    return res.status(404).json({ message: "Task not found." });
+    if (result.rows.length === 0) {
+      return res.status(404).json({ message: "Task not found." });
+    }
+
+    return res.status(200).json(result.rows[0]);
+  } catch (err) {
+    if (next) {
+      return next(err);
+    }
+    return res.status(500).json({ error: err.message });
   }
-
-  const [deletedTask] = global.tasks.splice(taskIndex, 1);
-  return res.status(200).json(sanitizeTask(deletedTask));
 };
 
 module.exports = {

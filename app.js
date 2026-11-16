@@ -1,4 +1,5 @@
 const express = require("express");
+const pool = require("./db/pg-pool");
 const timeRouter = require("./routes/timeRoutes");
 const userRouter = require("./routes/userRoutes");
 const taskRouter = require("./routes/taskRoutes");
@@ -7,8 +8,6 @@ const notFound = require("./middleware/not-found");
 const errorHandler = require("./middleware/error-handler");
 
 global.user_id = null;
-global.users = [];
-global.tasks = [];
 
 const app = express();
 
@@ -22,6 +21,17 @@ app.post("/testpost", (req, res) => {
   res.status(200).json({
     message: "POST route works",
   });
+});
+
+app.get("/health", async (req, res) => {
+  try {
+    await pool.query("SELECT 1");
+    res.json({ status: "ok", db: "connected" });
+  } catch (err) {
+    res.status(500).json({
+      message: `db not connected, error: ${err.message}`,
+    });
+  }
 });
 
 app.use("/api", timeRouter);
@@ -60,6 +70,9 @@ async function shutdown(code = 0) {
       });
     });
     console.log("HTTP server closed.");
+    // Close all PostgreSQL connections after the HTTP server has stopped.
+    await pool.end();
+    console.log("PostgreSQL connection pool closed.");
   } catch (err) {
     console.error("Error during shutdown:", err);
     code = 1;
