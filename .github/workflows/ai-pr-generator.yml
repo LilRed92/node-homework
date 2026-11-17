@@ -73,9 +73,9 @@ jobs:
             local response
             local http_code
             local body
-            local request_body
 
-            request_body=$(jq -n -c \
+            # Write payload directly to a file to avoid command-line length limits
+            jq -n -c \
               '{
                 contents: [{
                   parts: [
@@ -84,14 +84,14 @@ jobs:
                     {text: env.DIFF}
                   ]
                 }]
-              }')
+              }' > gemini_payload.json
 
             while [ "$attempt" -le "$max_attempts" ]; do
               response=$(curl -sS -w $'\n%{http_code}' -X POST \
                 "https://generativelanguage.googleapis.com/v1beta/models/gemini-3.5-flash:generateContent" \
                 -H "Content-Type: application/json" \
                 -H "x-goog-api-key: ${GEMINI_API_KEY}" \
-                -d "$request_body") || response=$'\n000'
+                -d @gemini_payload.json) || response=$'\n000'
 
               http_code="${response##*$'\n'}"
               body="${response%$'\n'*}"
@@ -123,10 +123,7 @@ jobs:
             local http_code
             local body
             local or_model="meta-llama/llama-3.1-8b-instruct:free"
-            local request_body
-            local or_diff
-
-            or_diff="$DIFF"
+            local or_diff="$DIFF"
             
             if [ "${#or_diff}" -gt 20000 ]; then
               echo "Diff is large; truncating OpenRouter fallback input."
@@ -134,36 +131,31 @@ jobs:
 
           [Diff truncated for fallback due to provider limits.]"
             fi
+            
+            export OR_DIFF="$or_diff"
+            export OR_MODEL="$or_model"
 
-            # Because or_diff is capped at 20k characters, it is safe to use --arg without hitting OS limits
-            request_body=$(jq -n -c \
-              --arg system "$SYSTEM_PROMPT" \
-              --arg diff "$or_diff" \
-              --arg model "$or_model" \
+            # Write payload directly to a file to avoid command-line length limits in curl
+            jq -n -c \
               '{
-                model: $model,
+                model: env.OR_MODEL,
                 messages: [
                   {
                     role: "system",
-                    content: $system
+                    content: env.SYSTEM_PROMPT
                   },
                   {
                     role: "user",
-                    content: ("\n\nHere is the diff to analyze:\n" + $diff)
+                    content: ("\n\nHere is the diff to analyze:\n" + env.OR_DIFF)
                   }
                 ]
-              }')
-              
-            if [ -z "$request_body" ]; then
-              echo "Error: Failed to build OpenRouter JSON payload."
-              return 1
-            fi
+              }' > or_payload.json
             
             response=$(curl -sS -w $'\n%{http_code}' -X POST \
               "https://openrouter.ai/api/v1/chat/completions" \
               -H "Content-Type: application/json" \
               -H "Authorization: Bearer ${OPENROUTER_API_KEY}" \
-              -d "$request_body") || response=$'\n000'
+              -d @or_payload.json) || response=$'\n000'
 
             http_code="${response##*$'\n'}"
             body="${response%$'\n'*}"
