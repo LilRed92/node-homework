@@ -1,5 +1,14 @@
 const express = require("express");
 const timeRouter = require("./routes/timeRoutes");
+const userRouter = require("./routes/userRoutes");
+const taskRouter = require("./routes/taskRoutes");
+const authMiddleware = require("./middleware/auth");
+const notFound = require("./middleware/not-found");
+const errorHandler = require("./middleware/error-handler");
+
+global.user_id = null;
+global.users = [];
+global.tasks = [];
 
 const app = express();
 
@@ -16,12 +25,12 @@ app.post("/testpost", (req, res) => {
 });
 
 app.use("/api", timeRouter);
+app.use("/api/users", userRouter);
+// 🔖 [VIDEO: Protected task routes with auth middleware]
+app.use("/api/tasks", authMiddleware, taskRouter);
 
-app.all("/{*splat}", (req, res) => {
-  res.status(404).json({
-    message: `No route found for ${req.method} ${req.path}`,
-  });
-});
+app.use(notFound);
+app.use(errorHandler);
 
 const port = process.env.PORT || 3000;
 
