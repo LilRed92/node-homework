@@ -73,17 +73,8 @@ jobs:
             local http_code
             local body
 
-            # Build JSON payload by reading directly from physical files
-            jq -n -c --rawfile prompt prompt.txt --rawfile diff diff.txt \
-              '{
-                contents: [{
-                  parts: [
-                    {text: $prompt},
-                    {text: "\n\nHere is the diff to analyze:\n"},
-                    {text: $diff}
-                  ]
-                }]
-              }' > gemini_payload.json
+            # Build JSON payload on a single line with strict quoted keys
+            jq -n -c --rawfile prompt prompt.txt --rawfile diff diff.txt '{"contents": [{"parts": [{"text": $prompt}, {"text": "\n\nHere is the diff to analyze:\n"}, {"text": $diff}]}]}' > gemini_payload.json
 
             while [ "$attempt" -le "$max_attempts" ]; do
               response=$(curl -sS -w $'\n%{http_code}' -X POST \
@@ -131,24 +122,11 @@ jobs:
           [Diff truncated for fallback due to provider limits.]"
             fi
             
-            # Prepend the text in bash so jq doesn't do any string math, which crashes it silently
+            # Prepend the text natively in bash so jq does zero string math
             printf "\n\nHere is the diff to analyze:\n%s" "$or_diff" | iconv -f utf-8 -t utf-8 -c > or_diff.txt
 
-            # Build JSON payload safely without the '+' operator
-            jq -n -c --arg model "$or_model" --rawfile prompt prompt.txt --rawfile diff or_diff.txt \
-              '{
-                model: $model,
-                messages: [
-                  {
-                    role: "system",
-                    content: $prompt
-                  },
-                  {
-                    role: "user",
-                    content: $diff
-                  }
-                ]
-              }' > or_payload.json
+            # Build JSON payload on a single line with strict quoted keys
+            jq -n -c --arg model "$or_model" --rawfile prompt prompt.txt --rawfile diff or_diff.txt '{"model": $model, "messages": [{"role": "system", "content": $prompt}, {"role": "user", "content": $diff}]}' > or_payload.json
             
             response=$(curl -sS -w $'\n%{http_code}' -X POST \
               "https://openrouter.ai/api/v1/chat/completions" \
