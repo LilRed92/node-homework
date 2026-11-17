@@ -8,6 +8,7 @@ router.get("/dogs", (req, res) => {
   res.status(200).json(dogs);
 });
 
+// 🔖 [VIDEO: Route validation & throw ValidationError]
 router.post("/adopt", (req, res, next) => {
   try {
     const { name, address, email, dogName } = req.body ?? {};
@@ -40,6 +41,7 @@ router.post("/adopt", (req, res, next) => {
         applicationId: Date.now(),
       },
     });
+  // 🔖 [VIDEO: Forwarding error via next(error)]
   } catch (error) {
     next(error);
   }

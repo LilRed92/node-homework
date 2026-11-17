@@ -1,3 +1,4 @@
+// 🔖 [VIDEO: Custom Error Classes]
 class ValidationError extends Error {
   constructor(message) {
     super(message);
