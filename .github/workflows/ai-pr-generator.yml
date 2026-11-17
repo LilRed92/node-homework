@@ -63,9 +63,9 @@ jobs:
 
           PR_DESCRIPTION=""
           
-          # Export to bypass Linux argument length limits in jq for Gemini
-          export SYSTEM_PROMPT
-          export DIFF
+          # Write prompt and diff to temporary files to 100% bypass Linux argument limits
+          printf "%s" "$SYSTEM_PROMPT" > prompt.txt
+          printf "%s" "$DIFF" > diff.txt
 
           call_gemini() {
             local max_attempts=3
@@ -74,14 +74,14 @@ jobs:
             local http_code
             local body
 
-            # Write payload directly to a file to avoid command-line length limits
-            jq -n -c \
+            # Build JSON payload by reading directly from physical files
+            jq -n -c --rawfile prompt prompt.txt --rawfile diff diff.txt \
               '{
                 contents: [{
                   parts: [
-                    {text: env.SYSTEM_PROMPT},
+                    {text: $prompt},
                     {text: "\n\nHere is the diff to analyze:\n"},
-                    {text: env.DIFF}
+                    {text: $diff}
                   ]
                 }]
               }' > gemini_payload.json
@@ -132,21 +132,20 @@ jobs:
           [Diff truncated for fallback due to provider limits.]"
             fi
             
-            export OR_DIFF="$or_diff"
-            export OR_MODEL="$or_model"
+            printf "%s" "$or_diff" > or_diff.txt
 
-            # Write payload directly to a file to avoid command-line length limits in curl
-            jq -n -c \
+            # Build JSON payload by reading directly from physical files
+            jq -n -c --arg model "$or_model" --rawfile prompt prompt.txt --rawfile diff or_diff.txt \
               '{
-                model: env.OR_MODEL,
+                model: $model,
                 messages: [
                   {
                     role: "system",
-                    content: env.SYSTEM_PROMPT
+                    content: $prompt
                   },
                   {
                     role: "user",
-                    content: ("\n\nHere is the diff to analyze:\n" + env.OR_DIFF)
+                    content: ("\n\nHere is the diff to analyze:\n" + $diff)
                   }
                 ]
               }' > or_payload.json
