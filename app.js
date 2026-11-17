@@ -26,6 +26,7 @@ app.post("/testpost", (req, res) => {
 
 app.use("/api", timeRouter);
 app.use("/api/users", userRouter);
+// 🔖 [VIDEO: Protected task routes with auth middleware]
 app.use("/api/tasks", authMiddleware, taskRouter);
 
 app.use(notFound);
