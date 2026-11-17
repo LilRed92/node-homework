@@ -6,7 +6,6 @@ const { userSchema } = require("../validation/userSchema");
 const scrypt = util.promisify(crypto.scrypt);
 
 // 🔖 [VIDEO: Password hashing with salt and scrypt]
-// 🔖 [VIDEO: Password hashing with salt and scrypt]
 const hashPassword = async (password) => {
   const salt = crypto.randomBytes(16).toString("hex");
   const derivedKey = await scrypt(password, salt, 64);
