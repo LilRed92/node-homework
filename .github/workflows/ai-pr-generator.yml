@@ -63,7 +63,7 @@ jobs:
 
           PR_DESCRIPTION=""
           
-          # Export to bypass Linux argument length limits in jq
+          # Export to bypass Linux argument length limits in jq for Gemini
           export SYSTEM_PROMPT
           export DIFF
 
@@ -134,24 +134,30 @@ jobs:
 
           [Diff truncated for fallback due to provider limits.]"
             fi
-            
-            export OR_DIFF="$or_diff"
 
+            # Because or_diff is capped at 20k characters, it is safe to use --arg without hitting OS limits
             request_body=$(jq -n -c \
+              --arg system "$SYSTEM_PROMPT" \
+              --arg diff "$or_diff" \
               --arg model "$or_model" \
               '{
                 model: $model,
                 messages: [
                   {
                     role: "system",
-                    content: env.SYSTEM_PROMPT
+                    content: $system
                   },
                   {
                     role: "user",
-                    content: "\n\nHere is the diff to analyze:\n\(env.OR_DIFF)"
+                    content: ("\n\nHere is the diff to analyze:\n" + $diff)
                   }
                 ]
               }')
+              
+            if [ -z "$request_body" ]; then
+              echo "Error: Failed to build OpenRouter JSON payload."
+              return 1
+            fi
             
             response=$(curl -sS -w $'\n%{http_code}' -X POST \
               "https://openrouter.ai/api/v1/chat/completions" \
