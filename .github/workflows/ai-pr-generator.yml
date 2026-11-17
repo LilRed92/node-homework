@@ -61,7 +61,7 @@ jobs:
           )
 
           PR_DESCRIPTION=""
-          
+
           # Write core prompt and diff to temporary files, sanitizing UTF-8 just in case
           printf "%s" "$SYSTEM_PROMPT" | iconv -f utf-8 -t utf-8 -c > prompt.txt
           printf "%s" "$DIFF" | iconv -f utf-8 -t utf-8 -c > diff.txt
@@ -75,11 +75,15 @@ jobs:
 
             # Build JSON payload by reading directly from physical files
             jq -n -c --rawfile prompt prompt.txt --rawfile diff diff.txt \
+            # Build JSON payload by reading directly from physical files
+            jq -n -c --rawfile prompt prompt.txt --rawfile diff diff.txt \
               '{
                 contents: [{
                   parts: [
                     {text: $prompt},
+                    {text: $prompt},
                     {text: "\n\nHere is the diff to analyze:\n"},
+                    {text: $diff}
                     {text: $diff}
                   ]
                 }]
@@ -123,14 +127,14 @@ jobs:
             local body
             local or_model="meta-llama/llama-3.1-8b-instruct:free"
             local or_diff="$DIFF"
-            
+
             if [ "${#or_diff}" -gt 20000 ]; then
               echo "Diff is large; truncating OpenRouter fallback input."
               or_diff="${or_diff:0:20000}
 
           [Diff truncated for fallback due to provider limits.]"
             fi
-            
+
             # Prepend the text in bash so jq doesn't do any string math, which crashes it silently
             printf "\n\nHere is the diff to analyze:\n%s" "$or_diff" | iconv -f utf-8 -t utf-8 -c > or_diff.txt
 
@@ -138,9 +142,11 @@ jobs:
             jq -n -c --arg model "$or_model" --rawfile prompt prompt.txt --rawfile diff or_diff.txt \
               '{
                 model: $model,
+                model: $model,
                 messages: [
                   {
                     role: "system",
+                    content: $prompt
                     content: $prompt
                   },
                   {
@@ -149,7 +155,7 @@ jobs:
                   }
                 ]
               }' > or_payload.json
-            
+
             response=$(curl -sS -w $'\n%{http_code}' -X POST \
               "https://openrouter.ai/api/v1/chat/completions" \
               -H "Content-Type: application/json" \
@@ -158,21 +164,21 @@ jobs:
 
             http_code="${response##*$'\n'}"
             body="${response%$'\n'*}"
-            
+
             if [ "$http_code" = "200" ]; then
               PR_DESCRIPTION=$(jq -r '.choices[0].message.content // empty' <<< "$body")
-            
+
               if [ -n "$PR_DESCRIPTION" ]; then
                 echo "PR description generated with OpenRouter fallback (${or_model})."
                 return 0
               fi
             fi
-            
+
             echo "OpenRouter fallback failed with HTTP ${http_code}."
             echo "OpenRouter response: $body"
             return 1
           }
-            
+
           if ! call_gemini; then
             echo "Gemini unavailable. Falling back to OpenRouter..."
             if ! call_openrouter; then
