@@ -1,11 +1,13 @@
 # Assignment 5a SQL Statements
 
+# 🔖 [VIDEO: Multi-table JOIN with SUM aggregation]
 # Task 1: Find the total price of each of the first 5 orders, ordered by order_id
 SELECT orders.order_id, SUM(products.price * line_items.quantity) AS total_price FROM orders JOIN line_items ON orders.order_id = line_items.order_id JOIN products ON line_items.product_id = products.product_id GROUP BY orders.order_id ORDER BY orders.order_id LIMIT 5;
 
 # Task 2: For each customer, find the average total price of their orders, ordered by customer name
 SELECT c.customer_name, AVG(t.total_price) AS average_order_price FROM customers c JOIN (SELECT orders.order_id, orders.customer_id, SUM(products.price * line_items.quantity) AS total_price FROM orders JOIN line_items ON orders.order_id = line_items.order_id JOIN products ON line_items.product_id = products.product_id GROUP BY orders.order_id, orders.customer_id) AS t ON c.customer_id = t.customer_id GROUP BY c.customer_id, c.customer_name ORDER BY c.customer_name;
 
+# 🔖 [VIDEO: CRUD operations - SELECT and INSERT transaction]
 # Task 3: Creating a new order
 # 1. Statement that finds customer_id for Perez and Sons
 SELECT customer_id FROM customers WHERE customer_name = 'Perez and Sons';
@@ -31,5 +33,6 @@ COMMIT;
 # 8. Query to find all line_items corresponding to the new order_id
 SELECT * FROM line_items WHERE order_id = 250;
 
+# 🔖 [VIDEO: GROUP BY with HAVING vs WHERE]
 # Task 4: Aggregation with Having
 SELECT first_name, last_name, COUNT(orders.order_id) AS order_count FROM employees JOIN orders ON employees.employee_id = orders.employee_id GROUP BY employees.employee_id, first_name, last_name HAVING COUNT(orders.order_id) > 5 ORDER BY last_name;

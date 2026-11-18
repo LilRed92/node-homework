@@ -1,3 +1,4 @@
+-- 🔖 [VIDEO: Primary key and unique constraints]
 -- Users table to store user information
 CREATE TABLE IF NOT EXISTS users (
   id SERIAL PRIMARY KEY,
@@ -7,6 +8,7 @@ CREATE TABLE IF NOT EXISTS users (
   created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 
+-- 🔖 [VIDEO: Foreign key and table relationships]
 -- Tasks table to store user tasks with foreign key relationship
 CREATE TABLE IF NOT EXISTS tasks (
   id SERIAL PRIMARY KEY,
