@@ -29,6 +29,7 @@ const create = async (req, res, next) => {
 // 🔖 [VIDEO: Listing tasks with Prisma findMany scoped to current user]
 const index = async (req, res, next) => {
   try {
+    // SELECT id, title FROM tasks WHERE user_id = $1
     const tasks = await prisma.task.findMany({
       where: {
         userId: global.user_id,

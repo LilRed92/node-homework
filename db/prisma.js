@@ -1,3 +1,4 @@
+// 🔖 [VIDEO: Prisma Client initialization and connection setup]
 const { PrismaClient } = require("@prisma/client");
 
 let opts;
