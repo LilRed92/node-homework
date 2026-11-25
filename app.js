@@ -3,6 +3,7 @@ const prisma = require("./db/prisma");
 const timeRouter = require("./routes/timeRoutes");
 const userRouter = require("./routes/userRoutes");
 const taskRouter = require("./routes/taskRoutes");
+const analyticsRouter = require("./routes/analyticsRoutes");
 const authMiddleware = require("./middleware/auth");
 const notFound = require("./middleware/not-found");
 const errorHandler = require("./middleware/error-handler");
@@ -38,6 +39,8 @@ app.use("/api", timeRouter);
 app.use("/api/users", userRouter);
 // 🔖 [VIDEO: Protected task routes with auth middleware]
 app.use("/api/tasks", authMiddleware, taskRouter);
+// 🔖 [VIDEO: Protected analytics routes with auth middleware]
+app.use("/api/analytics", authMiddleware, analyticsRouter);
 
 app.use(notFound);
 app.use(errorHandler);
